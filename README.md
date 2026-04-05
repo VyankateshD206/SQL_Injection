@@ -43,7 +43,7 @@ A deliberately vulnerable web application demonstrating SQL injection attacks, b
 
 1. **Start all containers:**
    ```bash
-   docker-compose up --build
+   docker compose up --build
    ```
 
 2. **Access the application:**
@@ -53,7 +53,7 @@ A deliberately vulnerable web application demonstrating SQL injection attacks, b
 
 3. **Stop the application:**
    ```bash
-   docker-compose down
+   docker compose down
    ```
 
 ## Database
